@@ -1,0 +1,236 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Azure region for all resources (defaults to the Resource Group location)"
+      }
+    },
+
+    "vnetAddressPrefix": {
+      "type": "string",
+      "defaultValue": "172.16.0.0/16",
+      "metadata": {
+        "description": "Address prefix for the Virtual Network"
+      }
+    },
+    "subnetName": {
+      "type": "string",
+      "defaultValue": "default",
+      "metadata": {
+        "description": "Name of the subnet"
+      }
+    },
+    "subnetAddressPrefix": {
+      "type": "string",
+      "defaultValue": "172.16.0.0/24",
+      "metadata": {
+        "description": "Address prefix for the subnet"
+      }
+    },
+
+    "adminUsername": {
+      "type": "string",
+      "defaultValue": "azureuser",
+      "metadata": {
+        "description": "Admin username for the VM"
+      }
+    },
+    "adminPassword": {
+      "type": "secureString",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Leave blank to be prompted in the Portal"
+      }
+    },
+
+    "vmSize": {
+      "type": "string",
+      "defaultValue": "Standard_D2s_v3",
+      "allowedValues": [
+        "Standard_B1ms",
+        "Standard_B2s",
+        "Standard_D2s_v3",
+        "Standard_D4s_v3"
+      ],
+      "metadata": {
+        "description": "VM size"
+      }
+    },
+
+    "customData": {
+      "type": "string",
+      "defaultValue": "IyEvYmluL2Jhc2gKCiMgQ3JlYXRlIGEgZGlyZWN0b3J5IGZvciBHaXRIdWIgcHJvamVjdHMgYW5kIGNsb25lIExpbnV4RXNjYXBlUm9vbXMgcmVwb3NpdG9yeQpzdWRvIG1rZGlyIC9HaXRIdWIKY2QgL0dpdEh1Yi8Kc3VkbyBkbmYgaW5zdGFsbCBnaXQgLXkgJj4vZGV2L251bGwKc3VkbyBnaXQgY2xvbmUgaHR0cHM6Ly9naXRodWIuY29tL21paGFtbWVyL0xpbnV4RXNjYXBlUm9vbXMuZ2l0CgojIEluc3RhbGwgcGlwIGFuZCBkYXRhY2xhc3NlcyAobmVlZGVkIGZvciBQeXRob24gPCAzLjcpCnN1ZG8gZG5mIGluc3RhbGwgcHl0aG9uMy1waXAgLXkKc3VkbyBwaXAzIGluc3RhbGwgZGF0YWNsYXNzZXMKCiMgQWRkIGNvbW1hbmQgdG8gLmJhc2hyYyBzbyBhc3Nlc3NtZW50LnB5IHJ1bnMgb24gbG9naW4gZm9yIGF6dXJldXNlcgplY2hvICdjbGVhcicgPj4gL2hvbWUvYXp1cmV1c2VyLy5iYXNocmMKZWNobyAncHl0aG9uMyAvR2l0SHViL0xpbnV4RXNjYXBlUm9vbXMvQXNzZXNzbWVudEZ1bi9hc3Nlc3NtZW50LnB5JyA+PiAvaG9tZS9henVyZXVzZXIvLmJhc2hyYwo=",
+      "metadata": {
+        "description": "Base64-encoded cloud-init for first-boot configuration",
+        "visibility": "hidden"
+      }
+    }
+  },
+
+  "variables": {
+    "baseVmName": "LinuxEscapeRooms",
+
+    "suffix3": "[substring(uniqueString(resourceGroup().id, deployment().name), 0, 3)]",
+    "vmNameUnique": "[concat(variables('baseVmName'), '-', variables('suffix3'))]",
+
+    "vnetName": "[concat(variables('vmNameUnique'), '-vnet')]",
+    "nsgName": "[concat(variables('vmNameUnique'), '-nsg')]",
+    "nicName": "[concat(variables('vmNameUnique'), '-nic')]",
+    "pipName": "[concat(variables('vmNameUnique'), '-pip')]",
+
+    "dnsLabel": "[concat(toLower(variables('baseVmName')), '-', variables('suffix3'))]"
+  },
+
+  "resources": [
+    {
+      "type": "Microsoft.Network/virtualNetworks",
+      "apiVersion": "2022-09-01",
+      "name": "[variables('vnetName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "[parameters('vnetAddressPrefix')]"
+          ]
+        },
+        "subnets": [
+          {
+            "name": "[parameters('subnetName')]",
+            "properties": {
+              "addressPrefix": "[parameters('subnetAddressPrefix')]"
+            }
+          }
+        ]
+      }
+    },
+
+    {
+      "type": "Microsoft.Network/networkSecurityGroups",
+      "apiVersion": "2022-09-01",
+      "name": "[variables('nsgName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "securityRules": [
+          {
+            "name": "Allow-SSH-22",
+            "properties": {
+              "priority": 300,
+              "protocol": "Tcp",
+              "access": "Allow",
+              "direction": "Inbound",
+              "sourceAddressPrefix": "*",
+              "sourcePortRange": "*",
+              "destinationAddressPrefix": "*",
+              "destinationPortRange": "22"
+            }
+          }
+        ]
+      }
+    },
+
+    {
+      "type": "Microsoft.Network/publicIPAddresses",
+      "apiVersion": "2022-09-01",
+      "name": "[variables('pipName')]",
+      "location": "[parameters('location')]",
+      "sku": { "name": "Standard" },
+      "properties": {
+        "publicIPAllocationMethod": "Static",
+        "dnsSettings": {
+          "domainNameLabel": "[variables('dnsLabel')]"
+        }
+      }
+    },
+
+    {
+      "type": "Microsoft.Network/networkInterfaces",
+      "apiVersion": "2022-09-01",
+      "name": "[variables('nicName')]",
+      "location": "[parameters('location')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]",
+        "[resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName'))]",
+        "[resourceId('Microsoft.Network/publicIPAddresses', variables('pipName'))]"
+      ],
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig1",
+            "properties": {
+              "subnet": {
+                "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('vnetName'), parameters('subnetName'))]"
+              },
+              "privateIPAllocationMethod": "Dynamic",
+              "publicIPAddress": {
+                "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('pipName'))]"
+              }
+            }
+          }
+        ],
+        "networkSecurityGroup": {
+          "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName'))]"
+        }
+      }
+    },
+
+    {
+      "type": "Microsoft.Compute/virtualMachines",
+      "apiVersion": "2022-11-01",
+      "name": "[variables('vmNameUnique')]",
+      "location": "[parameters('location')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/networkInterfaces', variables('nicName'))]"
+      ],
+      "properties": {
+        "hardwareProfile": {
+          "vmSize": "[parameters('vmSize')]"
+        },
+        "osProfile": {
+          "computerName": "[variables('vmNameUnique')]",
+          "adminUsername": "[parameters('adminUsername')]",
+          "adminPassword": "[parameters('adminPassword')]",
+          "customData": "[parameters('customData')]"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "RedHat",
+            "offer": "RHEL",
+            "sku": "8-lvm-gen2",
+            "version": "latest"
+          },
+          "osDisk": {
+            "createOption": "FromImage",
+            "managedDisk": {
+              "storageAccountType": "Premium_LRS"
+            }
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            { "id": "[resourceId('Microsoft.Network/networkInterfaces', variables('nicName'))]" }
+          ]
+        }
+      }
+    }
+  ],
+
+  "outputs": {
+    "vmName": {
+      "type": "string",
+      "value": "[variables('vmNameUnique')]"
+    },
+    "publicIpAddress": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Network/publicIPAddresses', variables('pipName'))).ipAddress]"
+    },
+    "fqdn": {
+      "type": "string",
+      "value": "[concat(variables('dnsLabel'), '.', parameters('location'), '.cloudapp.azure.com')]"
+    }
+  }
+}
